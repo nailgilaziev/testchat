@@ -46,7 +46,7 @@ class MessageSource {
           if (m.replyTo == messages[h].id) {
             var rm = messages[h];
             var mp = MsgPreview(rm.author.fullName, rm.text);
-            reply = p(90) ? Reply(mp, null) : Reply(null, 'Недоступно');
+            reply = p(30) ? Reply(mp, null) : Reply(null, 'Недоступно');
             break;
           }
         }

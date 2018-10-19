@@ -46,6 +46,7 @@ class TransferEndBlock implements ChatItem {
 
   Message transfer;
 
+  //TODO сделать полностью как блок сообщения
   TransferEndBlock(this.transfer);
 
   @override
