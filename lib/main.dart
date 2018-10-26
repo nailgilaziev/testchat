@@ -1,31 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:testchat/data.dart';
 import 'package:testchat/repository.dart';
 import 'package:testchat/ui.dart';
 import 'package:testchat/utilities.dart';
+import 'package:testchat/widgets/chatitem/reactions_block.dart';
 
 void main() => runApp(MyApp());
 
+//const bg =  Color(0xFFEEEEEE);
+
 class MyApp extends StatelessWidget {
   // This widget is the root of your application.
+
   @override
   Widget build(BuildContext context) {
+    final brightness = Brightness.light;
+    bool isDark = brightness == Brightness.dark;
+    final bg = Colors.grey;
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: Text("test"),
+        title: 'Flutter Demo',
+        theme: ThemeData(
+          brightness: brightness,
+          primarySwatch: bg,
+          primaryColor: isDark ? bg[900] : bg[50],
+          cardColor: isDark ? Colors.grey[900] : Colors.white,
+          scaffoldBackgroundColor: isDark ? Colors.black : bg[200],
         ),
-        backgroundColor: const Color(0xFFCCDDDD),
-        body: MyHomePage(title: 'Flutter Demo Home Page'),
-      ),
+
+        home: MyScreen()
     );
   }
 }
+
+class MyScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("test"),
+      ),
+      body: MyHomePage(title: 'Flutter Demo Home Page'),
+    );
+  }
+}
+
 
 class MyHomePage extends StatefulWidget {
   MyHomePage({Key key, this.title}) : super(key: key);
@@ -57,27 +75,25 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  static const space = 4.0;
-  static const space05 = space / 2;
-  static const space2 = space * 2;
-  static const space3 = space * 3;
-  static const space4 = space * 4;
-
   Widget _itemBuilder(BuildContext context, int index) {
     var chatItem = chatItems[index];
     if (chatItem is Msg) return _buildMsg(chatItem);
     if (chatItem is DaySeparator) return _buildDaySeparator(chatItem);
-    if (chatItem is TransferEndBlock) return _buildTransferEndBlock(chatItem);
+    if (chatItem is TransferredDaySeparator)
+      return _buildDaySeparator(chatItem, isTransferred: true);
+    if (chatItem is BlockEnd) return _buildTransferEndBlock(chatItem);
 
     return Container(child: Text("Upsupported item"));
   }
 
-  Widget _buildDaySeparator(DaySeparator daySeparator) {
+  Widget _buildDaySeparator(DaySeparator daySeparator,
+      {bool isTransferred: false}) {
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+          padding: EdgeInsets.symmetric(
+              vertical: (isTransferred ? 4.0 : 8.0), horizontal: 16.0),
           decoration: ShapeDecoration(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16.0)),
@@ -93,17 +109,20 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   //TODO merge with daySeparator?
-  Widget _buildTransferEndBlock(TransferEndBlock chatItem) => Padding(
+  Widget _buildTransferEndBlock(BlockEnd chatItem) =>
+      Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: space),
-        child: Text(
-          chatItem.text,
-          textScaleFactor: 0.7,
-          style: TextStyle(color: Colors.grey),
+        child: Center(
+          child: Text(
+            chatItem.text,
+            textScaleFactor: 0.7,
+            style: TextStyle(color: Colors.grey),
+          ),
         ),
       );
 
   Widget _buildMsg(Msg msg) {
-    return Padding(
+    var mainContent = Padding(
       padding: EdgeInsets.only(top: msg.isContinuation ? space05 : space2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -118,6 +137,21 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
     );
+
+    if (msg.reactions != null) {
+      var reactions = ReactionsBlock(msg.reactions);
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            mainContent,
+            Padding(
+              padding: const EdgeInsets.only(
+                  left: 39.0, right: 36, top: space, bottom: space05),
+              child: reactions,
+            )
+          ]);
+    } else
+      return mainContent;
   }
 
   Widget _avatarArea(Msg msg) {
@@ -128,13 +162,14 @@ class _MyHomePageState extends State<MyHomePage> {
       textScaleFactor: 0.7,
     );
 
+    var lines = msg.bubbleTimeLines;
+    var offset = -14.0 * lines + lines - 1;
+
     var items = <Widget>[
       SizedBox(width: avatarSize),
       Positioned(
         //TODO for transferredMessages that has additionally day or year increase bottom padding (-38,-26)
-        bottom: (msg.avatar != null
-            ? (msg.bubbleTimeLines > 1 ? -26.0 : -14.0)
-            : 0.0),
+        bottom: (msg.avatar != null ? offset : 0.0),
         child: time,
       ),
     ];
@@ -168,20 +203,24 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget _bubbleArea(Msg msg) => Container(
         decoration: ShapeDecoration.fromBoxDecoration(
           BoxDecoration(
-            color: Colors.white,
+            color: Theme
+                .of(context)
+                .cardColor,
             border: !msg.isImportant ? null : Border.all(color: msg.color),
             borderRadius: BorderRadius.only(
                 topLeft: msg.isContinuation
-                    ? Radius.circular(space)
-                    : Radius.circular(space3),
+                    ? Radius.circular(space2)
+                    : Radius.circular(space4),
                 topRight: msg.isContinuation
-                    ? Radius.circular(space)
-                    : Radius.circular(space3),
-                bottomRight: msg.avatar == null || msg.transferInfo != null
-                    ? Radius.circular(space)
-                    : Radius.circular(space * 3),
+                    ? Radius.circular(space2)
+                    : Radius.circular(space4),
+                bottomRight: msg.avatar == null ||
+                    msg.headerInfo?.withIndicator ==
+                        false //forwarding header block
+                    ? Radius.circular(space2)
+                    : Radius.circular(space4),
                 bottomLeft:
-                    msg.avatar == null ? Radius.circular(space) : Radius.zero
+                msg.avatar == null ? Radius.circular(space2) : Radius.zero
 
                 //right: Radius.circular(20.0),
                 ),
@@ -198,9 +237,28 @@ class _MyHomePageState extends State<MyHomePage> {
     if (msg.authorName != null)
       t.add(Text(msg.authorName, style: TextStyle(color: msg.color)));
     if (msg.reply != null) t.add(_buildReplyButton(msg.reply));
-    t.add(Text(msg.text,
-        style: DefaultTextStyle.of(context).style.apply(fontSizeFactor: 1.2)));
-    if (msg.transferInfo != null) t.add(_buildTransferInfo(msg));
+    if (msg.text != null) {
+      var text = Text(msg.text,
+          style: DefaultTextStyle
+              .of(context)
+              .style
+              .apply(fontSizeFactor: 1.2));
+      if (msg.editTime != null)
+        t.add(Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: <Widget>[
+              text,
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Text(msg.editTime, textScaleFactor: 0.7),
+              )
+            ]));
+      else
+        t.add(text);
+    }
+
+    if (msg.headerInfo != null) t.add(_buildHeaderInfo(msg));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: t,
@@ -224,27 +282,45 @@ class _MyHomePageState extends State<MyHomePage> {
       colItems.add(Text(reply.fallback));
     else {
       var p = reply.preview;
-      colItems.add(Text(p.author,overflow: TextOverflow.fade,textScaleFactor: 0.9,)); // Use author widget
-      colItems.add(Text(p.content,overflow: TextOverflow.fade,textScaleFactor: 0.9)); // Use author widget
+      colItems.add(ReplyText(p.author)); // Use author widget
+      colItems.add(ReplyText(p.content)); // Use author widget
     }
-    return Row(children: <Widget>[
+    return Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
       Container(width: 2.0, height: 32.0, color: Colors.blueAccent),
       SizedBox(width: space2),
-      Column(children: colItems,crossAxisAlignment: CrossAxisAlignment.start,)
+      Flexible(
+        child: Column(
+          children: colItems,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      )
     ]);
   }
 
-  Widget _buildTransferInfo(Msg msg) {
-    TransferInfo transferInfo = msg.transferInfo;
+  Widget _buildHeaderInfo(Msg msg) {
+    var headerInfo = msg.headerInfo;
     var colItems = List<Widget>();
-    colItems.add(Text(
-        '$transferSymbol Перенесено сообщений: ${transferInfo.count}',
-        style: TextStyle(color: msg.color))); //TODO color text with
-    colItems.add(Text('$transferSymbol Из чата №: ${transferInfo.from}',
-        style: TextStyle(color: msg.color))); // Use author widget
     colItems.add(SizedBox(height: space));
-    colItems.add(Container(height: 2.0, color: msg.color));
+    colItems.add(Text(headerInfo.line1, style: TextStyle(color: msg.color)));
+    colItems.add(Text(headerInfo.line2,
+        style: TextStyle(color: msg.color))); //TODO Use author widget
+    if (msg.headerInfo.withIndicator) {
+      colItems.add(SizedBox(height: space));
+      colItems.add(Container(height: 2.0, color: msg.color));
+    }
     return Column(
         children: colItems, crossAxisAlignment: CrossAxisAlignment.stretch);
   }
+}
+
+class ReplyText extends StatelessWidget {
+  final String text;
+
+  ReplyText(this.text);
+
+  @override
+  Widget build(BuildContext context) =>
+      Text(text,
+          maxLines: 1, overflow: TextOverflow.ellipsis, textScaleFactor: 0.9);
 }

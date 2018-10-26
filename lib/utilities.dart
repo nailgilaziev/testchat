@@ -1,6 +1,7 @@
 
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 var rnd = Random();
@@ -27,3 +28,12 @@ bool daysDiffer(DateTime a, DateTime b) {
 }
 
 const transferSymbol = '➥';
+const forwardSymbol = '➤';
+
+const space = 4.0;
+const space05 = space / 2;
+const space2 = space * 2;
+const space3 = space * 3;
+const space4 = space * 4;
+
+const black6 = Color(0x0F000000);

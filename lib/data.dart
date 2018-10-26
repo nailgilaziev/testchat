@@ -1,12 +1,32 @@
 import 'package:meta/meta.dart';
 
-class TransferInfo {
+enum HeaderType { transferring, forwarding }
+
+class HeaderInfo {
   int count;
   int from;
+  String fromName;
+  HeaderType type;
 
-  TransferInfo({
+  HeaderInfo({
+    @required this.type,
     @required this.count,
     @required this.from,
+    @required this.fromName,
+  });
+}
+
+class Reaction {
+  DateTime dateTime;
+  int userId;
+  String reaction;
+  bool deleted;
+
+  Reaction({
+    @required this.dateTime,
+    @required this.userId,
+    @required this.reaction,
+    this.deleted: false,
   });
 }
 
@@ -14,29 +34,31 @@ class Message {
   int id;
   User author;
 
-  /// creation time by user
-  DateTime originDateTime;
+  // creation time by user on device (is for analyze only)
 
   /// registered on server time
   DateTime dateTime;
   DateTime editDateTime;
-  TransferInfo transferInfo;
+  HeaderInfo headerInfo;
   String text;
   int replyTo;
-  int transferMessageId;
+  int transferHeaderId;
+  int forwardHeaderId;
   bool isImportant;
+  List<Reaction> reactions;
 
   Message({
     @required this.id,
     @required this.author,
-    this.originDateTime,
     @required this.dateTime,
     this.editDateTime,
     @required this.text,
-    this.isImportant,
+    this.isImportant: false,
     this.replyTo,
-    this.transferInfo,
-    this.transferMessageId,
+    this.headerInfo,
+    this.transferHeaderId,
+    this.forwardHeaderId,
+    this.reactions
   });
 }
 

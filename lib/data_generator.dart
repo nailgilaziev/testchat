@@ -7,12 +7,40 @@ class DataGenerator {
 
   var users = [
     User(id: 1, firstName: 'Nail', lastName: 'Gilaziev'),
-    User(id: 1, firstName: 'Dmitryi', lastName: 'Ulyanov'),
-    User(id: 1, firstName: 'Marat', lastName: 'Ismagilov'),
-    User(id: 1, firstName: 'Dmitryi', lastName: 'Borisov'),
-    User(id: 1, firstName: 'Sergey', lastName: 'Shiskin'),
-    User(id: 1, firstName: 'Julia', lastName: 'Volkova(Perelman)'),
-    User(id: 1, firstName: 'Igor', lastName: 'Zinoviev'),
+    User(id: 2, firstName: 'Dmitryi', lastName: 'Ulyanov'),
+    User(id: 3, firstName: 'Marat', lastName: 'Ismagilov'),
+    User(id: 4, firstName: 'Dmitryi', lastName: 'Borisov'),
+    User(id: 5, firstName: 'Sergey', lastName: 'Shiskin'),
+    User(id: 6, firstName: 'Julia', lastName: 'Volkova(Perelman)'),
+    User(id: 7, firstName: 'Igor', lastName: 'Zinoviev'),
+  ];
+
+  var reactions = [
+    '🙈',
+    '😳',
+    '😢',
+    '😱',
+    '😡',
+    '😅',
+    '🙊',
+    '😂',
+    '😀',
+    '😎',
+    '🎉',
+    '😊',
+    '👍',
+    '🤷',
+    '🤔',
+    '🔥',
+    '💪',
+    '🤝',
+    '👏',
+    '👎',
+    '🤞',
+    '🤘',
+    '👌',
+    '👆',
+    '🖖'
   ];
 
   List<Message> generateMessages() {
@@ -28,16 +56,8 @@ class DataGenerator {
       var msgId = i;
       if (p(40)) userIndex = rnd.nextInt(users.length);
 
-      var secondsIncrement = rnd.nextInt(200);
-      var minutesIncrement = 0;
-      if (p(80)) minutesIncrement = rnd.nextInt(200);
-      var dayIncrement = 0;
-      if (p(90)) dayIncrement = rnd.nextInt(10);
-
-      timeDifference -= Duration(
-          days: dayIncrement,
-          minutes: minutesIncrement,
-          seconds: secondsIncrement);
+      Duration rndOffset = rndTimeOffset();
+      timeDifference -= rndOffset;
       var msgDateTime = DateTime.now().subtract(timeDifference);
 
       var sentenceCount = rnd.nextInt(2) + 1;
@@ -49,20 +69,26 @@ class DataGenerator {
 
       var msgText = messageText.trim();
       var msgIsImportant = p(95);
-      TransferInfo ti;
+      HeaderInfo ti;
       if (i > 10 && lastTransferTime > 10 && p(50)) {
         lastTransferTime = 0;
         //time to mark items forvarded
-        int count = rnd.nextInt(10);
+        int count = rnd.nextInt(9) + 1;
         msgId = i - count;
-        ti = TransferInfo(
+        ti = HeaderInfo(
+          type: p(60) ? HeaderType.forwarding : HeaderType.transferring,
           count: count,
           from: 100000 + i, //must be entityId
+          fromName: 'Заявка',
         );
         for (int h = i - 1; h > i - 1 - count; h--) {
-          messages[h].transferMessageId = msgId;
+          if (ti.type == HeaderType.transferring)
+            messages[h].transferHeaderId = msgId;
+          else
+            messages[h].forwardHeaderId = msgId;
           messages[h].id++;
         }
+        if (p(80)) msgText = null;
       }
 
       int replyMsgId;
@@ -70,19 +96,64 @@ class DataGenerator {
         replyMsgId = i - 10 - rnd.nextInt(20);
       }
 
+      List<Reaction> msgReactions;
+      if (p(90)) {
+        msgReactions = List();
+        int pc = p(90) ? 20 : 6;
+        int count = rnd.nextInt(pc) + 1;
+        print('Generated $count reactions for $i msg');
+        var t = msgDateTime;
+        for (int i = 0; i < count; i++) {
+          t = t.add(rndTimeOffset());
+          //rnd can cause a invalid data 1 -1 1 1 (repeatable set) - this is fine
+          var uId = users[rnd.nextInt(users.length)].id;
+          var react = reactions[rnd.nextInt(reactions.length)];
+          msgReactions.add(Reaction(
+            dateTime: t,
+            userId: uId,
+            reaction: react,
+          ));
+          if (p(80)) {
+            t = t.add(rndTimeOffset());
+            msgReactions.add(Reaction(
+              dateTime: t,
+              userId: uId,
+              reaction: react,
+              deleted: true,
+            ));
+          }
+        }
+      }
+
       var m = Message(
           id: msgId,
           author: users[userIndex],
           dateTime: msgDateTime,
+          editDateTime: p(90) ? DateTime.now() : null,
           text: msgText,
           isImportant: msgIsImportant,
-          transferInfo: ti,
-          replyTo: replyMsgId);
+          headerInfo: ti,
+          replyTo: replyMsgId,
+          reactions: msgReactions);
       if (ti != null)
         messages.insert(i - ti.count, m);
       else
         messages.add(m);
     }
     return messages;
+  }
+
+  Duration rndTimeOffset() {
+    var secondsIncrement = rnd.nextInt(200);
+    var minutesIncrement = 0;
+    if (p(80)) minutesIncrement = rnd.nextInt(200);
+    var dayIncrement = 0;
+    if (p(90)) dayIncrement = rnd.nextInt(10);
+
+    var rndOffset = Duration(
+        days: dayIncrement,
+        minutes: minutesIncrement,
+        seconds: secondsIncrement);
+    return rndOffset;
   }
 }

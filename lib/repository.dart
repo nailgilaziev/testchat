@@ -9,8 +9,6 @@ class MessageSource {
   // messages positioned closer to each other
   static const stickThreshold = 1000 * 60 * 2;
 
-
-
   var usersToColorMap = Map<User, Color>();
   var unusedColorIndex = 0;
 
@@ -24,11 +22,25 @@ class MessageSource {
     });
   }
 
+  String dependTimeFormatting(DateTime base, DateTime src,
+      {bool separateLines: false, String pretendSymbol: ''}) {
+    var t = timeFormatter.format(src);
+    if (base == null) return t;
+    t = pretendSymbol + t;
+    if (daysDiffer(base, src)) {
+      t = pretendSymbol + dayFormat(src) + (separateLines ? '\n' : ' ') + t;
+      if (base.year != src.year) {
+        t = '$pretendSymbol${src.year}${separateLines ? '\n' : ' '}$t';
+      }
+    }
+    return t;
+  }
+
   List<ChatItem> chatItemsFrom(List<Message> messages) {
     colorsSource.shuffle();
 
     var chatItems = List<ChatItem>();
-    Message savedTransferMessage;
+    Message savedHeaderMessage;
     DateTime lastDayLabel;
 
     for (int i = 0; i < messages.length; i++) {
@@ -36,16 +48,28 @@ class MessageSource {
       var userColor = associatedColorWithUser(m.author);
       var msgTime = timeFormatter.format(m.dateTime);
 
-      Avatar avatar;
-      String authorName;
+      //TODO check for null in names
+      Avatar avatar = Avatar(m.author.firstName[0] + m.author.lastName[0]);
+      String authorName = m.author.fullName;
       Message pm = i > 0 ? messages[i - 1] : null;
+      MsgHeaderInfo msgHeaderInfo;
 
       Reply reply;
       if (m.replyTo != null) {
         for (int h = i - 1; h > 0; h--) {
           if (m.replyTo == messages[h].id) {
             var rm = messages[h];
-            var mp = MsgPreview(rm.author.fullName, rm.text);
+            String text = rm.text;
+            if (text == null) {
+              if (rm.headerInfo != null) {
+                if (rm.headerInfo.type == HeaderType.transferring)
+                  text = transferSymbol + 'Перенос сообщений';
+                else
+                  text = forwardSymbol + 'Пересылка сообщений';
+              }
+            }
+            if (text == null) text = '<No data>';
+            var mp = MsgPreview(rm.author.fullName, text);
             reply = p(30) ? Reply(mp, null) : Reply(null, 'Недоступно');
             break;
           }
@@ -53,64 +77,122 @@ class MessageSource {
       }
 
       var timeLines = 1;
-      if (m.transferInfo != null) savedTransferMessage = m;
-      if (m.transferMessageId != null) {
-        //we must choose avatar
-        msgTime = transferSymbol + msgTime;
-        if (daysDiffer(savedTransferMessage.dateTime, m.dateTime)) {
-          // Year not supported yet
-          msgTime = transferSymbol + dayFormat(m.dateTime) + '\n' + msgTime;
-          timeLines = 2;
+      if (m.headerInfo != null) {
+        savedHeaderMessage = m;
+        msgHeaderInfo = MsgHeaderInfo(m.headerInfo);
+      }
+      if (m.transferHeaderId != null || m.forwardHeaderId != null) {
+        var symbol =
+        savedHeaderMessage.headerInfo.type == HeaderType.transferring
+            ? transferSymbol
+            : forwardSymbol;
+        authorName = symbol + authorName;
+
+        if (m.forwardHeaderId != null) {
+          avatar = null;
         }
+        msgTime = dependTimeFormatting(savedHeaderMessage.dateTime, m.dateTime,
+            separateLines: true, pretendSymbol: symbol);
+        timeLines = '\n'
+            .allMatches(msgTime)
+            .length + 1;
       }
 
+      //Следующее сообщение за заголовком пересылки тоже обязано имень имя автора
+      // и не должно слипаться с заголовком. Гарантируется, что пересылается ≥ 1 сообщения
+      bool isNextAfterHeader = (pm != null && pm.headerInfo != null);
 
-      //TODO check for null
-      avatar = Avatar(m.author.firstName[0] + m.author.lastName[0]);
-      if (pm != null &&
-          pm.transferInfo == null &&
+      // Текущее сообщение идет сразу за пересылаемым блоком сообщений(transferred or forwarding)
+      // Вне зависимости от других условий, это сообщение должно иметь имя автора.
+      // Не должно быть попытки произвести слипание сообщений
+      // Это для случая, когда в течении времени stickThreshold переслали
+      // сообщения автора и он сразу после этого написал
+      bool isNextAfterBlock = (pm != null &&
+          (pm.transferHeaderId != null && m.transferHeaderId == null ||
+              pm.forwardHeaderId != null && m.forwardHeaderId == null));
+
+      // Если автор в течение stickThreshold дописал еще одно сообшение в добавок к предыдущему
+      // то в этом случае сообщения слипаются - у первого сообщения есть имя автора и нет аватарки
+      // а у последнего наоборот. Расстояния между bubble уменьшаются и они слипаются
+      bool isContinuousMessage = (pm != null &&
           m.author == pm.author &&
-          m.dateTime.difference(pm.dateTime).inMilliseconds < stickThreshold) {
+          m.dateTime
+              .difference(pm.dateTime)
+              .inMilliseconds < stickThreshold);
+
+      if (!isNextAfterHeader &&
+          !isNextAfterBlock &&
+          !m.isImportant &&
+          isContinuousMessage) {
+        //remove avatar from previous msg
+        (chatItems[chatItems.length - 1] as Msg).avatar = null;
+        //clear author name from current msg
         authorName = null;
-        try {
-          (chatItems[chatItems.length - 1] as Msg).avatar = null;
-        } catch(e) {
-          print('e');
-        }
-      } else {
-        authorName = (m.transferMessageId != null ? transferSymbol : '')+m.author.fullName ;
       }
 
-      if (pm != null &&
-          m.transferMessageId == null &&
-          pm.transferMessageId != null) {
-        chatItems.add(TransferEndBlock(savedTransferMessage));
+      if (isNextAfterBlock) {
+        chatItems.add(BlockEnd(savedHeaderMessage));
       }
 
       if (pm == null /*first message*/ ||
-          m.transferMessageId == null /*transfered messages not used*/ &&
+          m.transferHeaderId == null /*transfered messages not used*/ &&
+              m.forwardHeaderId == null /*forwarded messages not used*/ &&
               daysDiffer(lastDayLabel, m.dateTime)) {
         lastDayLabel = m.dateTime;
         chatItems.add(DaySeparator(m.dateTime));
       }
 
+      List<ChatItemReaction> msgReactions;
+      if (m.reactions != null) msgReactions = parseReactions(m.reactions);
+
+      String editTime;
+      if (m.editDateTime != null) {
+        editTime =
+            'изменено ' + dependTimeFormatting(m.dateTime, m.editDateTime);
+      }
+
       var t = Msg(
-        id: m.id,
-        color: userColor,
-        avatar: avatar,
-        authorName: authorName,
-        bubbleTimeLines: timeLines,
-        bubbleTime: msgTime,
-        text: m.text,
-        isImportant: m.isImportant,
-        transferInfo: m.transferInfo,
-        isForeign: m.transferMessageId != null,
-        reply: reply,
-      );
+          id: m.id,
+          color: userColor,
+          avatar: avatar,
+          authorName: authorName,
+          bubbleTimeLines: timeLines,
+          bubbleTime: msgTime,
+          editTime: editTime,
+          text: m.text,
+          isImportant: m.isImportant,
+          headerInfo: msgHeaderInfo,
+          isForwarding: m.forwardHeaderId != null,
+          reply: reply,
+          reactions: msgReactions);
 
       chatItems.add(t);
     }
     return chatItems;
+  }
+
+  var myUserId = 1;
+
+  List<ChatItemReaction> parseReactions(List<Reaction> rs) {
+    //Reactions must be sorted by date
+    var m = Map<String, Set<int>>();
+    rs.forEach((r) {
+      var users = m.putIfAbsent(r.reaction, () {
+        var s = Set<int>();
+        s.add(r.userId);
+        return s;
+      });
+      if (r.deleted)
+        users.remove(r.userId);
+      else
+        users.add(r.userId);
+    });
+    var res = m.entries
+        .where((e) => e.value.length > 0)
+        .map((e) =>
+        ChatItemReaction(e.key, e.value.length, e.value.contains(myUserId)))
+        .toList();
+    return res.isEmpty ? null : res;
   }
 
   List<ChatItem> generate() {
@@ -118,83 +200,4 @@ class MessageSource {
     var ms = dg.generateMessages();
     return chatItemsFrom(ms);
   }
-
-//  void nextModification(int modificationNumber) {
-//    var nail = AuthorName("Nail Gilaziev", Colors.amber);
-//    var borisov = AuthorName("Dmitriy Borisov", Colors.indigoAccent);
-//    var fail = AuthorName("Fail Fachriev", Colors.teal);
-//    switch (modificationNumber) {
-//      case 0:
-//        var m = Msg(
-//          0,
-//          Avatar(nail.color),
-//          nail,
-//          "08:11",
-//          "First simple text mesage",
-//        );
-//        msgs.add(m);
-//        break;
-//      case 1:
-//        var m = Msg(
-//          1,
-//          Avatar(nail.color),
-//          nail,
-//          "08:28",
-//          "second message",
-//        );
-//        msgs.add(m);
-//        break;
-//      case 2:
-//        var m = Msg(
-//          2,
-//          Avatar(borisov.color),
-//          borisov,
-//          "12:59",
-//          "Third MESSAGE that use capitalisation. And it use new sentences too. It have a very long text, but without new lines. ",
-//        );
-//        msgs.add(m);
-//        break;
-//      case 3:
-//        var msg = msgs[0];
-//        msg.text = "First Simple Text Mesage (modified)";
-//        msg.modificationCount++;
-//        break;
-//      case 4:
-//        var msg = msgs[1];
-//        msg.text =
-//        "Second message is modified now. And it has a lot of symbols. And it has a new line symbols.\n\nGetters and setters are special methods that provide read and write access to an object’s properties. Recall that each instance variable has an implicit getter, plus a setter if appropriate.";
-//        msg.modificationCount++;
-//        break;
-//      default:
-//        String text = "";
-//        var rnd = new Random();
-//        int symbolsCount = rnd.nextInt(200);
-//        bool caps = rnd.nextInt(100) > 70;
-//        for (int i = 0; i < symbolsCount; i++) {
-//          var charCode = rnd.nextInt(25) + (caps ? 65 : 97);
-//          text += String.fromCharCode(charCode);
-//        }
-//        text = text.trim();
-//        var authors = [nail, borisov, fail];
-//        var author = authors[rnd.nextInt(3)];
-//        var m = Msg(
-//          modificationNumber,
-//          Avatar(author.color),
-//          author,
-//          "14:" +
-//              (modificationNumber % 60 < 10
-//                  ? ("0" + (modificationNumber % 60).toString())
-//                  : (modificationNumber % 60).toString()),
-//          text,
-//        );
-//        msgs.add(m);
-//
-//        if (rnd.nextInt(100) > 80) {
-//          var msg = msgs[rnd.nextInt(modificationNumber - 2)];
-//          msg.text = text;
-//          msg.modificationCount++;
-//        }
-//    }
-//  }
-
 }
